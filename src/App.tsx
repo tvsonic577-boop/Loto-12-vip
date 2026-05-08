@@ -186,47 +186,64 @@ export default function App() {
     }
   };
 
+  const getTime = (val: any) => {
+    if (!val) return 0;
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return new Date(val).getTime();
+    if (typeof val.toMillis === 'function') return val.toMillis();
+    if (val.seconds) return val.seconds * 1000;
+    return 0;
+  };
+
   const handlePlaceBet = async () => {
     if (!user || selectedNumbers.length !== NUMBERS_TO_PICK || !gameState) return;
     setIsSubmitting(true);
+    
+    // Capturamos os dados locais para garantir que não usemos referências mutáveis
+    const userSnapshot = { uid: user.uid, displayName: user.displayName };
+    const currentSelectedNumbers = [...selectedNumbers];
+    const currentRound = gameState.roundNumber;
+    
     try {
       const serial = `L12-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
       
-      // Objeto para o Firestore (contém FieldValue)
       const betForDb = {
         serial,
-        userId: user.uid,
-        userName: user.displayName || 'Usuário',
-        numbers: [...selectedNumbers],
+        userId: userSnapshot.uid,
+        userName: userSnapshot.displayName || 'Usuário',
+        numbers: currentSelectedNumbers,
         status: 'pending' as BetStatus,
-        round: gameState.roundNumber,
+        round: currentRound,
         createdAt: serverTimestamp()
       };
       
       const docRef = await addDoc(collection(db, 'bets'), betForDb);
       
-      // Objeto limpo para o Estado React (evita referências circulares do Firestore)
-      const betForState: Bet = {
+      const cleanBet: Bet = {
         id: docRef.id,
         serial,
-        userId: user.uid,
-        userName: user.displayName || 'Usuário',
-        numbers: [...selectedNumbers],
+        userId: userSnapshot.uid,
+        userName: userSnapshot.displayName || 'Usuário',
+        numbers: currentSelectedNumbers,
         status: 'pending' as BetStatus,
-        round: gameState.roundNumber,
-        createdAt: new Date().toISOString() // String simples para o estado
+        round: currentRound,
+        createdAt: Date.now()
       };
 
-      setSelectedBetForCheckout(betForState);
+      setSelectedBetForCheckout(cleanBet);
       setView('checkout');
-      setSelectedNumbers([]);
-      
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (e) {
-      console.error(e);
-      alert('Erro ao enviar aposta.');
-    } finally {
+      
+      // Limpeza posterior para evitar lag na transição
+      setTimeout(() => {
+        setSelectedNumbers([]);
+        setIsSubmitting(false);
+      }, 500);
+
+    } catch (e: any) {
+      console.error("ERROR PLACING BET:", e?.message || "Unknown error");
       setIsSubmitting(false);
+      alert('Erro ao enviar aposta. Por favor, verifique sua conexão e tente novamente.');
     }
   };
 
@@ -252,7 +269,7 @@ export default function App() {
           className="relative z-10 text-center w-full max-w-xs"
         >
           <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/40 rounded-3xl flex items-center justify-center mb-8 mx-auto shadow-[0_0_30px_rgba(251,191,36,0.2)]">
-            <Clover className="text-amber-400 fill-amber-400/30 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]" size={44} />
+            <Clover className="text-[#FFD700] fill-[#FFD700]/10 drop-shadow-[0_0_15px_rgba(255,215,0,0.5)]" size={44} />
           </div>
 
           {!user ? (
@@ -454,11 +471,7 @@ export default function App() {
             <p className="text-white/40 font-medium">Você ainda não fez nenhuma aposta.</p>
           </div>
         ) : (
-          [...myBets].sort((a, b) => {
-            const timeA = a.createdAt?.toMillis?.() || 0;
-            const timeB = b.createdAt?.toMillis?.() || 0;
-            return timeB - timeA;
-          }).map(bet => (
+          [...myBets].sort((a, b) => getTime(b.createdAt) - getTime(a.createdAt)).map(bet => (
             <div key={bet.id} className="bg-[#141418] p-6 rounded-3xl border border-white/5 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex flex-col">
@@ -627,7 +640,7 @@ export default function App() {
       <header className="flex items-center justify-between p-6 pt-10 shrink-0">
         <button onClick={handleLogoClick} className="flex items-center gap-3 text-left">
           <div className="w-10 h-10 rounded-xl overflow-hidden glass-card flex items-center justify-center border border-white/10 shrink-0 bg-amber-500/10 shadow-[0_0_15px_rgba(251,191,36,0.1)]">
-            <Clover size={22} className="text-amber-400 fill-amber-400/20 drop-shadow-[0_0_8px_rgba(251,191,36,0.4)]" />
+            <Clover size={22} className="text-[#FFD700] fill-[#FFD700]/10 drop-shadow-[0_0_8px_rgba(255,215,0,0.4)]" />
           </div>
           <div>
             <div className="text-[10px] text-white/40 font-black uppercase tracking-widest leading-none mb-1">Loteria VIP</div>
@@ -653,22 +666,14 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-y-auto px-6 pb-24 no-scrollbar">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={view}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="h-full"
-          >
+        <div className="h-full animate-in fade-in duration-500">
             {view === 'home' && renderHome()}
             {view === 'bet' && renderBet()}
             {view === 'history' && renderHistory()}
             {view === 'rules' && renderRules()}
             {view === 'checkout' && renderCheckout()}
             {view === 'admin' && renderAdmin()}
-          </motion.div>
-        </AnimatePresence>
+        </div>
       </main>
 
       {/* Bottom Nav Sidebar for mobile to avoid covering buttons */}
