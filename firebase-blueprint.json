@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and role",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "cpf": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "role", "cpf"]
+    },
+    "Bet": {
+      "title": "Bet",
+      "description": "A user's lottery bet",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "numbers": { "type": "array", "items": { "type": "integer" } },
+        "status": { "type": "string", "enum": ["pending", "active", "winner", "loser"] },
+        "hits": { "type": "integer" },
+        "round": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "numbers", "status", "round"]
+    },
+    "GameState": {
+      "title": "Game State",
+      "description": "Global state of the lottery system",
+      "type": "object",
+      "properties": {
+        "accumulatedPrize": { "type": "number" },
+        "currentPool": { "type": "number" },
+        "roundNumber": { "type": "integer" },
+        "lastDrawResult": { "type": "array", "items": { "type": "integer" } },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/bets/{betId}": {
+      "schema": "Bet",
+      "description": "User bets"
+    },
+    "/system/state": {
+      "schema": "GameState",
+      "description": "Global settings and accumulated prizes"
+    }
+  }
+}
