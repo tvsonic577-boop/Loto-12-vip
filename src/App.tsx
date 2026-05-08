@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, FormEvent } from 'react';
 import { 
-  auth, db, signInWithGoogle, 
+  auth, db, signInWithGoogle, signOut,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
   onSnapshot, collection, query, where, addDoc, updateDoc, 
   serverTimestamp, doc, setDoc, getDoc, writeBatch, deleteDoc, getDocs, increment
 } from './lib/firebase';
@@ -35,10 +36,81 @@ export default function App() {
   const [view, setView] = useState<'home' | 'bet' | 'history' | 'rules' | 'admin' | 'checkout'>('home');
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Auth Form State
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [loginCpf, setLoginCpf] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [regName, setRegName] = useState('');
+  const [regCpf, setRegCpf] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+
   const [cpfInput, setCpfInput] = useState('');
   const [whatsappInput, setWhatsappInput] = useState('');
   const [needsProfile, setNeedsProfile] = useState(false);
   const [selectedBetForCheckout, setSelectedBetForCheckout] = useState<Bet | null>(null);
+
+  const cpfToEmail = (cpf: string) => `${cpf.replace(/\D/g, '')}@loteriavip.com`;
+
+  const handleCpfLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    if (loginCpf.length < 11 || loginPassword.length < 6) {
+      alert('CPF ou Senha inválidos.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await signInWithEmailAndPassword(auth, cpfToEmail(loginCpf), loginPassword);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        alert('Usuário ou senha incorretos.');
+      } else {
+        alert('Erro ao entrar. Verifique sua conexão.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCpfRegister = async (e: FormEvent) => {
+    e.preventDefault();
+    if (regName.length < 3) return alert('Nome muito curto');
+    if (regCpf.length < 11) return alert('CPF inválido');
+    if (regPhone.length < 10) return alert('Telefone inválido');
+    if (regPassword.length < 6) return alert('A senha precisa ter no mínimo 6 caracteres');
+
+    setIsSubmitting(true);
+    try {
+      const email = cpfToEmail(regCpf);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, regPassword);
+      const u = userCredential.user;
+
+      // Criar perfil imediatamente
+      const role = email === `${ADMIN_EMAIL.split('@')[0]}@loteriavip.com` || u.email === ADMIN_EMAIL ? 'admin' : 'user';
+      const newProfile: UserProfile = {
+        userId: u.uid,
+        name: regName,
+        email: email,
+        role,
+        cpf: regCpf.replace(/\D/g, ''),
+        whatsapp: regPhone.replace(/\D/g, ''),
+        updatedAt: serverTimestamp()
+      };
+      await setDoc(doc(db, 'users', u.uid), newProfile);
+      setProfile(newProfile);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/email-already-in-use') {
+        alert('Este CPF já está cadastrado.');
+      } else {
+        alert('Erro ao cadastrar. Verifique sua conexão.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // 1. Auth & Profile
   useEffect(() => {
@@ -273,20 +345,135 @@ export default function App() {
           </div>
 
           {!user ? (
-            <>
-              <h1 className="text-5xl font-black text-white mb-2 tracking-tighter">LOTO 12 VIP</h1>
-              <p className="text-indigo-200/60 mb-12 text-lg font-medium">
-                Sua sorte começa aqui. Ganhe com 12 ou mais acertos.
+            <div className="w-full">
+              <h1 className="text-4xl font-black text-white mb-2 tracking-tighter">LOTO 12 VIP</h1>
+              <p className="text-indigo-200/60 mb-8 text-base font-medium">
+                {authMode === 'login' ? 'Entre para fazer suas apostas' : 'Cadastre-se e comece a ganhar'}
               </p>
-              
-              <button 
-                onClick={signInWithGoogle}
-                className="w-full h-16 bg-white text-black font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl hover:shadow-indigo-500/20"
-              >
-                 <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="google" />
-                 ENTRAR COM GOOGLE
-              </button>
-            </>
+
+              <div className="bg-white/5 border border-white/10 p-6 rounded-3xl backdrop-blur-xl space-y-4">
+                {authMode === 'login' ? (
+                  <form onSubmit={handleCpfLogin} className="space-y-4">
+                    <div className="text-left space-y-2">
+                       <label className="text-[10px] text-white/40 font-bold uppercase tracking-widest pl-2">Seu CPF</label>
+                       <input 
+                        type="text"
+                        placeholder="000.000.000-00"
+                        value={loginCpf}
+                        onChange={(e) => setLoginCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                        className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-5 text-white font-medium focus:border-amber-500/50 outline-none transition-all"
+                        disabled={isSubmitting}
+                        required
+                       />
+                    </div>
+                    <div className="text-left space-y-2">
+                       <label className="text-[10px] text-white/40 font-bold uppercase tracking-widest pl-2">Sua Senha</label>
+                       <input 
+                        type="password"
+                        placeholder="••••••••"
+                        value={loginPassword}
+                        onChange={(e) => setLoginPassword(e.target.value)}
+                        className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-5 text-white font-medium focus:border-amber-500/50 outline-none transition-all"
+                        disabled={isSubmitting}
+                        required
+                       />
+                    </div>
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full h-16 bg-[#FFD700] text-black font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl shadow-amber-500/20 disabled:opacity-50"
+                    >
+                      {isSubmitting ? <Loader2 className="animate-spin" /> : 'ENTRAR NO SISTEMA'}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleCpfRegister} className="space-y-3">
+                    <div className="text-left space-y-1">
+                       <label className="text-[10px] text-white/40 font-bold uppercase tracking-widest pl-2">Nome Completo</label>
+                       <input 
+                        type="text"
+                        placeholder="Como no seu RG"
+                        value={regName}
+                        onChange={(e) => setRegName(e.target.value)}
+                        className="w-full h-12 bg-white/5 border border-white/10 rounded-2xl px-5 text-white text-sm font-medium focus:border-amber-500/50 outline-none transition-all"
+                        disabled={isSubmitting}
+                        required
+                       />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="text-left space-y-1">
+                        <label className="text-[10px] text-white/40 font-bold uppercase tracking-widest pl-2">CPF</label>
+                        <input 
+                          type="text"
+                          placeholder="000.000.000-00"
+                          value={regCpf}
+                          onChange={(e) => setRegCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                          className="w-full h-12 bg-white/5 border border-white/10 rounded-2xl px-4 text-white text-sm font-medium focus:border-amber-500/50 outline-none transition-all"
+                          disabled={isSubmitting}
+                          required
+                        />
+                      </div>
+                      <div className="text-left space-y-1">
+                        <label className="text-[10px] text-white/40 font-bold uppercase tracking-widest pl-2">WhatsApp</label>
+                        <input 
+                          type="text"
+                          placeholder="(00) 00000-0000"
+                          value={regPhone}
+                          onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                          className="w-full h-12 bg-white/5 border border-white/10 rounded-2xl px-4 text-white text-sm font-medium focus:border-amber-500/50 outline-none transition-all"
+                          disabled={isSubmitting}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="text-left space-y-1">
+                       <label className="text-[10px] text-white/40 font-bold uppercase tracking-widest pl-2">Senha de Acesso</label>
+                       <input 
+                        type="password"
+                        placeholder="Mínimo 6 caracteres"
+                        value={regPassword}
+                        onChange={(e) => setRegPassword(e.target.value)}
+                        className="w-full h-12 bg-white/5 border border-white/10 rounded-2xl px-5 text-white text-sm font-medium focus:border-amber-500/50 outline-none transition-all"
+                        disabled={isSubmitting}
+                        required
+                       />
+                    </div>
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full h-14 bg-[#FFD700] text-black font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl shadow-amber-500/20 mt-2 disabled:opacity-50"
+                    >
+                      {isSubmitting ? <Loader2 className="animate-spin" /> : 'CRIAR MINHA CONTA'}
+                    </button>
+                  </form>
+                )}
+              </div>
+
+              <div className="mt-8">
+                <button 
+                  onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                  className="text-white/60 font-bold text-sm tracking-wide uppercase px-6 py-3 rounded-2xl border border-white/5 active:bg-white/5"
+                >
+                  {authMode === 'login' ? 'Não tem conta? CADASTRE-SE' : 'Já tem conta? FAÇA LOGIN'}
+                </button>
+              </div>
+
+              <div className="mt-6 flex flex-col items-center gap-4">
+                <div className="flex items-center gap-4 w-full">
+                  <div className="h-[1px] bg-white/10 flex-1"></div>
+                  <span className="text-[10px] text-white/20 font-black uppercase tracking-[0.2em]">ou se preferir</span>
+                  <div className="h-[1px] bg-white/10 flex-1"></div>
+                </div>
+                
+                <button 
+                  onClick={signInWithGoogle}
+                  className="w-full h-14 bg-white/5 text-white/80 border border-white/10 font-bold rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all"
+                >
+                  <img src="https://www.google.com/favicon.ico" className="w-5 h-5 opacity-80" alt="google" />
+                  ENTRAR COM GOOGLE
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="space-y-6">
               <h1 className="text-3xl font-black text-white tracking-tighter">COMPLETE SEU PERFIL</h1>

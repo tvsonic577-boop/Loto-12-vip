@@ -1,6 +1,6 @@
 {
   "name": "Loto 12 VIP",
-  "description": "Plataforma de loteria Loto 12 VIP, escolha 15 números e concorra a prêmios acumulados acertando a partir de 12 pontos.",
+  "description": "Plataforma de loteria Loto 12 VIP com login seguro por CPF, escolha 15 números e concorra a prêmios acumulados acertando a partir de 12 pontos.",
   "requestFramePermissions": [
   ],
   "majorCapabilities": [

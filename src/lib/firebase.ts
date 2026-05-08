@@ -1,5 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { 
+  getAuth, GoogleAuthProvider, signInWithPopup,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut 
+} from 'firebase/auth';
 import { 
   getFirestore, doc, getDocFromServer, onSnapshot, collection, query, 
   where, addDoc, updateDoc, serverTimestamp, setDoc, getDoc,
@@ -37,6 +40,9 @@ export async function testConnection() {
 testConnection();
 
 export { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword,
+  signOut,
   onSnapshot, 
   collection, 
   query, 
