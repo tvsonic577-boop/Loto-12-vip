@@ -191,19 +191,36 @@ export default function App() {
     setIsSubmitting(true);
     try {
       const serial = `L12-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
-      const bet: Bet = {
+      
+      // Objeto para o Firestore (contém FieldValue)
+      const betForDb = {
         serial,
         userId: user.uid,
         userName: user.displayName || 'Usuário',
-        numbers: selectedNumbers,
-        status: 'pending',
+        numbers: [...selectedNumbers],
+        status: 'pending' as BetStatus,
         round: gameState.roundNumber,
         createdAt: serverTimestamp()
       };
-      const docRef = await addDoc(collection(db, 'bets'), bet);
-      setSelectedBetForCheckout({ ...bet, id: docRef.id });
+      
+      const docRef = await addDoc(collection(db, 'bets'), betForDb);
+      
+      // Objeto limpo para o Estado React (evita referências circulares do Firestore)
+      const betForState: Bet = {
+        id: docRef.id,
+        serial,
+        userId: user.uid,
+        userName: user.displayName || 'Usuário',
+        numbers: [...selectedNumbers],
+        status: 'pending' as BetStatus,
+        round: gameState.roundNumber,
+        createdAt: new Date().toISOString() // String simples para o estado
+      };
+
+      setSelectedBetForCheckout(betForState);
       setView('checkout');
       setSelectedNumbers([]);
+      
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e) {
       console.error(e);
@@ -234,8 +251,8 @@ export default function App() {
           animate={{ y: 0, opacity: 1 }}
           className="relative z-10 text-center w-full max-w-xs"
         >
-          <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/40 rounded-3xl flex items-center justify-center mb-8 mx-auto shadow-2xl">
-            <Clover className="text-amber-400 fill-amber-400/20 drop-shadow-[0_0_15px_rgba(251,191,36,0.3)]" size={40} />
+          <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/40 rounded-3xl flex items-center justify-center mb-8 mx-auto shadow-[0_0_30px_rgba(251,191,36,0.2)]">
+            <Clover className="text-amber-400 fill-amber-400/30 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)]" size={44} />
           </div>
 
           {!user ? (
