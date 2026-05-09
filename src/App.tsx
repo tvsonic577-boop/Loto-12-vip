@@ -21,7 +21,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const VALOR_APOSTA = 10;
+const VALOR_APOSTA = 4.99;
 const TOTAL_NUMBERS = 25;
 const NUMBERS_TO_PICK = 15;
 const MIN_HITS_TO_WIN = 12;
@@ -50,6 +50,9 @@ export default function App() {
   const [whatsappInput, setWhatsappInput] = useState('');
   const [needsProfile, setNeedsProfile] = useState(false);
   const [selectedBetForCheckout, setSelectedBetForCheckout] = useState<Bet | null>(null);
+  const [pixData, setPixData] = useState<{ qr_code: string; qr_code_base64: string; ticket_url: string } | null>(null);
+  const [loadingPix, setLoadingPix] = useState(false);
+  const [checkingPayment, setCheckingPayment] = useState(false);
 
   const cpfToEmail = (cpf: string) => `${cpf.replace(/\D/g, '')}@loteriavip.com`;
 
@@ -237,6 +240,105 @@ export default function App() {
   const handleSupportClick = () => {
     window.open('https://wa.me/5562996346075?text=Olá, preciso de suporte com a Loto 12 VIP', '_blank');
   };
+
+  const generatePix = async () => {
+    if (!selectedBetForCheckout || !profile) return;
+    setLoadingPix(true);
+    try {
+      const response = await fetch('/api/create-pix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          betId: selectedBetForCheckout.id,
+          amount: VALOR_APOSTA,
+          userEmail: profile.email,
+          userName: profile.name,
+          cpf: profile.cpf
+        })
+      });
+      const data = await response.json();
+      if (data.qr_code) {
+        setPixData(data);
+      } else {
+        alert('Erro ao gerar PIX. Tente novamente mais tarde.');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Erro de conexão ao gerar PIX.');
+    } finally {
+      setLoadingPix(false);
+    }
+  };
+
+  const copyPix = () => {
+    if (!pixData?.qr_code) return;
+    navigator.clipboard.writeText(pixData.qr_code);
+    alert('PIX Copiado com sucesso!');
+  };
+
+  const checkPaymentManual = async () => {
+    if (!pixData || !selectedBetForCheckout) {
+      console.log("[CHECK] PixData ou SelectedBet ausentes", { pixData, selectedBetForCheckout });
+      alert("Erro local: Dados do pagamento não encontrados no navegador. Tente gerar o PIX novamente.");
+      return;
+    }
+    setCheckingPayment(true);
+    try {
+      const paymentId = (pixData as any).id;
+      if (!paymentId) {
+        console.error("[CHECK] ID do pagamento não encontrado no pixData", pixData);
+        alert("ID do pagamento não encontrado. Gere um novo PIX.");
+        return;
+      }
+      
+      console.log(`[CHECK] Verificando pagamento ${paymentId}...`);
+      const response = await fetch(`/api/check-payment/${paymentId}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[CHECK] Erro na API:", errorData);
+        alert(`Erro ao verificar: ${errorData.error || 'Erro desconhecido'}`);
+        return;
+      }
+
+      const data = await response.json();
+      console.log("[CHECK] Resultado recebido:", data);
+      
+      if (data.status === 'approved') {
+        alert("Pagamento aprovado! Redirecionando...");
+        // O useEffect com onSnapshot cuidará do redirecionamento
+      } else if (data.status === 'pending') {
+        alert("O pagamento ainda consta como pendente. Se você já pagou, aguarde alguns instantes.");
+      } else {
+        alert(`Status do pagamento: ${data.status}. Se você já pagou, entre em contato com o suporte.`);
+      }
+    } catch (error) {
+      console.error("[CHECK] Erro na requisição:", error);
+      alert('Erro de conexão ao verificar pagamento. Verifique sua internet.');
+    } finally {
+      setCheckingPayment(false);
+    }
+  };
+
+  // Escutar status da aposta selecionada para checkout
+  useEffect(() => {
+    if (view !== 'checkout' || !selectedBetForCheckout?.id) return;
+
+    const unsubscribe = onSnapshot(doc(db, 'bets', selectedBetForCheckout.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const betData = docSnap.data() as Bet;
+        if (betData.status === 'active') {
+          // Aposta confirmada!
+          setPixData(null);
+          setSelectedBetForCheckout(null);
+          setView('history');
+          alert('Pagamento confirmado! Sua aposta agora está ATIVA.');
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [view, selectedBetForCheckout?.id]);
 
   // 3. User Bets
   useEffect(() => {
@@ -722,62 +824,102 @@ export default function App() {
   const renderCheckout = () => (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="text-center">
-        <div className="w-20 h-20 bg-indigo-500/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-4 border border-indigo-500/20">
-          <Wallet className="text-indigo-500" size={32} />
+        <div className="w-20 h-20 bg-amber-500/10 rounded-[2.5rem] flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+          <Wallet className="text-amber-500" size={32} />
         </div>
-        <h2 className="text-3xl font-black text-white tracking-tighter">Checkout</h2>
-        <p className="text-white/40 text-sm">Realize o pagamento para ativar sua aposta.</p>
+        <h2 className="text-3xl font-black text-white tracking-tighter">Enviar Comprovante</h2>
+        <p className="text-white/40 text-sm">Escaneie o QR Code e envie o comprovante via WhatsApp.</p>
       </div>
 
       <div className="bg-[#141418] rounded-[2.5rem] p-8 border border-white/5 space-y-6">
         <div className="flex justify-between items-center pb-6 border-b border-white/5">
           <div className="text-left">
             <div className="text-[10px] text-white/40 font-black uppercase tracking-widest">Valor do Jogo</div>
-            <div className="text-2xl font-black text-white">R$ {VALOR_APOSTA},00</div>
+            <div className="text-2xl font-black text-white">R$ {VALOR_APOSTA.toFixed(2).replace('.', ',')}</div>
           </div>
           <div className="text-right">
             <div className="text-[10px] text-white/40 font-black uppercase tracking-widest">Série</div>
-            <div className="text-sm font-black text-indigo-400">{selectedBetForCheckout?.serial}</div>
+            <div className="text-sm font-black text-amber-500">{selectedBetForCheckout?.serial}</div>
           </div>
         </div>
 
-        <div className="space-y-4">
-          <h4 className="text-xs font-black text-white/60 uppercase tracking-widest text-center">Formas de Pagamento</h4>
-          <a 
-            href="https://mpago.la/1anBvFU" 
-            target="_blank" 
-            rel="noreferrer"
-            className="w-full block"
-          >
-            <button className="w-full h-16 bg-white text-black font-black rounded-2xl flex items-center justify-between px-6 active:scale-95 transition-all outline-none">
-              <span>PIX COPIA E COLA</span>
-              <ArrowUpCircle size={20} className="rotate-90" />
+        <div className="space-y-6">
+          {!pixData ? (
+            <button 
+              onClick={generatePix}
+              disabled={loadingPix}
+              className="w-full h-16 bg-[#FFD700] text-black font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all outline-none disabled:opacity-50"
+            >
+              {loadingPix ? <Loader2 className="animate-spin" /> : 'GERAR PIX AGORA'}
+              {!loadingPix && <ArrowUpCircle size={20} className="rotate-90" />}
             </button>
-          </a>
-          <div className="bg-indigo-500/5 p-8 rounded-[2rem] border border-indigo-500/20 text-center">
-             <div className="text-white font-black text-xs space-y-3">
-                <p className="text-indigo-400 text-[10px] tracking-widest uppercase">Regra de Ativação</p>
-                <p className="leading-relaxed text-sm">
-                  TIRE PRINT DESTA TELA E ENVIE NO SUPORTE COM O COMPROVANTE DE PIX PARA LIBERAÇÃO DA CARTELA!
+          ) : (
+            <div className="space-y-6 animate-in zoom-in-95 duration-300">
+              <div className="bg-white p-4 rounded-3xl mx-auto w-fit shadow-[0_0_50px_rgba(255,215,0,0.15)]">
+                <img 
+                  src={`data:image/png;base64,${pixData.qr_code_base64}`} 
+                  alt="QR Code PIX" 
+                  className="w-48 h-48"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <button 
+                  onClick={() => window.open('https://wa.me/5562996346075?text=Olá, estou enviando o comprovante da minha aposta!', '_blank')}
+                  className="w-full h-14 bg-emerald-500 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <Send size={18} />
+                  ENVIAR COMPROVANTE VIA WHATSAPP
+                </button>
+                
+                <button 
+                  onClick={copyPix}
+                  className="w-full h-14 bg-white/5 border border-white/10 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <RefreshCw size={18} className="text-amber-500" />
+                  COPIAR PIX COPIA E COLA
+                </button>
+
+                <button 
+                  onClick={checkPaymentManual}
+                  disabled={checkingPayment}
+                  className="w-full h-12 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 font-black rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {checkingPayment ? <Loader2 className="animate-spin" size={16} /> : <ShieldCheck size={16} />}
+                  JÁ PAGUEI, VERIFICAR AGORA
+                </button>
+                
+                {checkingPayment && (
+                  <p className="text-[10px] text-center text-indigo-400 font-black uppercase tracking-[0.2em] animate-pulse mt-2">
+                    Verificando com o Banco...
+                  </p>
+                )}
+                
+                <p className="text-[10px] text-center text-white/30 font-bold uppercase tracking-widest leading-loose">
+                  O sistema identificará seu pagamento <br /> automaticamente em alguns segundos.
                 </p>
-             </div>
-          </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="bg-indigo-500/10 p-6 rounded-3xl border border-indigo-500/20 flex gap-4">
-        <div className="text-indigo-400 shrink-0"><Info size={20} /></div>
-        <p className="text-[11px] text-indigo-200/70 font-medium leading-relaxed">
-          Após realizar o PIX, sua aposta será validada automaticamente em até 5 minutos pela nossa equipe financeira.
+      <div className="bg-amber-500/10 p-6 rounded-3xl border border-amber-500/20 flex gap-4">
+        <div className="text-amber-400 shrink-0"><ShieldCheck size={20} /></div>
+        <p className="text-[11px] text-amber-200/70 font-medium leading-relaxed">
+          Pagamento processado via Mercado Pago. Sua aposta será ativada instantaneamente assim que o PIX for compensado.
         </p>
       </div>
 
       <button 
-        onClick={() => setView('history')}
+        onClick={() => { setView('history'); setPixData(null); }}
         className="w-full h-16 border border-white/10 rounded-2xl text-white/60 font-black tracking-widest hover:text-white transition-all active:scale-95"
       >
-        VOLTAR PARA MINHAS APOSTAS
+        VER MINHAS APOSTAS
       </button>
+
+      {/* Link de WhatsApp Oculto */}
+      <a href="https://wa.me/5562996346075" className="opacity-0 pointer-events-none absolute bottom-0 left-0" aria-hidden="true">WhatsApp Support</a>
     </div>
   );
 
